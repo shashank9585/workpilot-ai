@@ -1,11 +1,12 @@
 """
 WorkPilot AI - Main Application
-The workspace dashboard with 4 modules for freelancers & agencies.
+Configured for apifreellm.com with rate limit handling.
 """
 
 import streamlit as st
-from openai import OpenAI
 import json
+import pandas as pd
+from datetime import datetime
 
 # Import our modular files
 from config import APP_NAME, APP_TAGLINE, APP_ICON, AI_MODEL, TIME_SAVINGS
@@ -16,13 +17,14 @@ from ai_rules import (
     MEETING_EXTRACTION_PROMPT
 )
 from policies import validate_extracted_text, validate_json_output
-from utils import extract_text_from_file, extract_text_from_multiple_files
+from utils import extract_text_from_file
 from math_engine import calculate_discrepancies, calculate_time_saved
 from action_engine import (
     generate_gmail_url, generate_audit_csv, generate_meeting_csv,
     format_sow_markdown, format_report_markdown, format_meeting_markdown
 )
 from sample_data import get_sample_file_content
+from api_client import call_ai # NEW API CLIENT
 
 # ============================================================
 # PAGE CONFIG
@@ -34,10 +36,6 @@ st.markdown("""
 <style>
     .main-header { font-size: 2.5rem; font-weight: bold; margin-bottom: 0; }
     .sub-header { color: #666; font-size: 1.1rem; margin-top: 0; }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px; border-radius: 10px; color: white; text-align: center;
-    }
     .gmail-btn {
         background-color: #D93025 !important; color: white !important;
         font-weight: bold; border: none; border-radius: 8px;
@@ -64,18 +62,21 @@ st.markdown(f'<p class="sub-header">{APP_TAGLINE}</p>', unsafe_allow_html=True)
 st.info("🔒 **ZERO-DATA RETENTION POLICY:** All files processed in-memory and wiped instantly. We never store, log, or train on your data.")
 
 # ============================================================
-# SIDEBAR: API KEY & INFO
+# SIDEBAR: INFO
 # ============================================================
 with st.sidebar:
     st.header("⚙️ Setup")
-    api_key = st.text_input("OpenAI API Key", type="password", 
-                            help="Get one at platform.openai.com")
+    st.success("✅ API Configured (apifreellm)")
     
     st.markdown("---")
     st.markdown("### 🧠 How It Works")
     st.markdown("1. **AI** extracts data from your files")
     st.markdown("2. **Python** does the math (zero hallucinations)")
     st.markdown("3. **You** review & take action")
+    
+    st.markdown("---")
+    st.markdown("### ⏱️ Free Tier Note")
+    st.caption("The free API has a 20-second rate limit between requests. If you see a rate limit error, just wait 20 seconds and click the button again!")
     
     st.markdown("---")
     st.markdown("### 📊 Your Impact")
@@ -144,9 +145,7 @@ with tab_audit:
         file_invoice = st.file_uploader("Upload invoice", type=["pdf", "txt"], key="audit_invoice")
     
     if st.button("🚀 Run Audit", type="primary", use_container_width=True):
-        if not api_key:
-            st.error("⚠️ Please enter your OpenAI API Key in the sidebar.")
-        elif not file_contract or not file_invoice:
+        if not file_contract or not file_invoice:
             st.warning("⚠️ Please upload both files.")
         else:
             with st.spinner("🧠 AI extracting data, Python calculating math..."):
@@ -154,24 +153,19 @@ with tab_audit:
                     c_text = extract_text_from_file(file_contract)
                     i_text = extract_text_from_file(file_invoice)
                     
-                    # Policy: Graceful Degradation
                     valid_c, err_c = validate_extracted_text(c_text, file_contract.name)
                     valid_i, err_i = validate_extracted_text(i_text, file_invoice.name)
                     if not valid_c: st.error(err_c); st.stop()
                     if not valid_i: st.error(err_i); st.stop()
                     
-                    # AI Extraction
-                    client = OpenAI(api_key=api_key)
-                    resp = client.chat.completions.create(
-                        model=AI_MODEL,
-                        messages=[
-                            {"role": "system", "content": AUDITOR_EXTRACTION_PROMPT},
-                            {"role": "user", "content": f"CONTRACT:\n{c_text}\n\nINVOICE:\n{i_text}"}
-                        ],
-                        response_format={"type": "json_object"},
-                        temperature=AI_TEMPERATURE_EXTRACTION
-                    )
-                    extracted = json.loads(resp.choices[0].message.content)
+                    # Call AI for Extraction
+                    result = call_ai(AUDITOR_EXTRACTION_PROMPT, f"CONTRACT:\n{c_text}\n\nINVOICE:\n{i_text}", require_json=True)
+                    
+                    if "error" in result:
+                        st.error(result["error"])
+                        st.stop()
+                    
+                    extracted = result
                     
                     valid, err = validate_json_output(extracted, ["contract_items", "invoice_items"], "Auditor")
                     if not valid: st.error(err); st.stop()
@@ -184,16 +178,14 @@ with tab_audit:
                     
                     st.session_state['audit_discs'] = discrepancies
                     st.session_state['audit_total'] = total
-                    st.session_state['audit_extracted'] = extracted
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"System Error: {e}")
     
     # Display Results
     if 'audit_discs' in st.session_state:
         discs = st.session_state['audit_discs']
         total = st.session_state['audit_total']
-        extracted = st.session_state['audit_extracted']
         
         st.markdown("---")
         if not discs:
@@ -201,32 +193,24 @@ with tab_audit:
         else:
             st.error(f"⚠️ **DISCREPANCIES DETECTED:** Total Overcharge: **${total:,.2f}**")
             
-            import pandas as pd
             df = pd.DataFrame(discs)
             st.dataframe(df, use_container_width=True)
             
             # AI Strategy (Email + Accounting)
             with st.spinner("🧠 AI generating dispute strategy..."):
-                try:
-                    client = OpenAI(api_key=api_key)
-                    strategy_prompt = AUDITOR_STRATEGY_PROMPT.format(
-                        discrepancies_json=json.dumps(discs),
-                        total_overcharge=total
-                    )
-                    resp2 = client.chat.completions.create(
-                        model=AI_MODEL,
-                        messages=[
-                            {"role": "system", "content": "Output STRICT JSON ONLY."},
-                            {"role": "user", "content": strategy_prompt}
-                        ],
-                        response_format={"type": "json_object"},
-                        temperature=AI_TEMPERATURE_STRATEGY
-                    )
-                    artifacts = json.loads(resp2.choices[0].message.content)
-                    
+                strategy_prompt = AUDITOR_STRATEGY_PROMPT.format(
+                    discrepancies_json=json.dumps(discs),
+                    total_overcharge=total
+                )
+                
+                result2 = call_ai("Output STRICT JSON ONLY.", strategy_prompt, require_json=True)
+                
+                if "error" in result2:
+                    st.error(f"Strategy generation error: {result2['error']}")
+                else:
+                    artifacts = result2
                     st.markdown("### 🚀 Action Center")
                     
-                    # Gmail Hack
                     subject = artifacts.get("email_subject", "Invoice Discrepancy Notice")
                     body = artifacts.get("email_body", "")
                     gmail_url = generate_gmail_url(subject=subject, body=body)
@@ -242,8 +226,6 @@ with tab_audit:
                     with st.expander("🧠 View AI Strategy & Accounting Actions"):
                         st.markdown(f"**📝 Accounting Adjustment:**\n{artifacts.get('accounting_action', 'N/A')}")
                         st.markdown(f"**📧 Drafted Email:**\n{body}")
-                except Exception as e:
-                    st.error(f"Strategy generation error: {e}")
 
 # ============================================================
 # TAB 3: SOW GENERATOR
@@ -256,32 +238,22 @@ with tab_sow:
                              placeholder="e.g., Call with Sarah from TechStart. They need a website redesign. Budget $15-20k. Timeline 10 weeks...")
     
     if st.button("🚀 Generate SOW", type="primary", use_container_width=True, key="sow_btn"):
-        if not api_key:
-            st.error("⚠️ Please enter your OpenAI API Key in the sidebar.")
-        elif not sow_input.strip():
+        if not sow_input.strip():
             st.warning("⚠️ Please paste some notes first.")
         else:
             with st.spinner("🧠 AI structuring your proposal..."):
-                try:
-                    client = OpenAI(api_key=api_key)
-                    resp = client.chat.completions.create(
-                        model=AI_MODEL,
-                        messages=[
-                            {"role": "system", "content": SOW_EXTRACTION_PROMPT},
-                            {"role": "user", "content": sow_input}
-                        ],
-                        response_format={"type": "json_object"},
-                        temperature=AI_TEMPERATURE_STRATEGY
-                    )
-                    sow_data = json.loads(resp.choices[0].message.content)
-                    
-                    valid, err = validate_json_output(sow_data, ["project_title", "deliverables"], "SOW")
-                    if not valid: st.error(err); st.stop()
-                    
-                    st.session_state['sow_data'] = sow_data
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                result = call_ai(SOW_EXTRACTION_PROMPT, sow_input, require_json=True)
+                
+                if "error" in result:
+                    st.error(result["error"])
+                    st.stop()
+                
+                sow_data = result
+                valid, err = validate_json_output(sow_data, ["project_title", "deliverables"], "SOW")
+                if not valid: st.error(err); st.stop()
+                
+                st.session_state['sow_data'] = sow_data
+                st.rerun()
     
     if 'sow_data' in st.session_state:
         sow_data = st.session_state['sow_data']
@@ -309,32 +281,22 @@ with tab_report:
                                 placeholder="e.g., DONE: homepage wireframes. IN PROGRESS: pricing page. BLOCKERS: waiting on screenshots...")
     
     if st.button("🚀 Generate Report", type="primary", use_container_width=True, key="report_btn"):
-        if not api_key:
-            st.error("⚠️ Please enter your OpenAI API Key in the sidebar.")
-        elif not report_input.strip():
+        if not report_input.strip():
             st.warning("⚠️ Please paste some notes first.")
         else:
             with st.spinner("🧠 AI polishing your update..."):
-                try:
-                    client = OpenAI(api_key=api_key)
-                    resp = client.chat.completions.create(
-                        model=AI_MODEL,
-                        messages=[
-                            {"role": "system", "content": REPORT_GENERATION_PROMPT},
-                            {"role": "user", "content": report_input}
-                        ],
-                        response_format={"type": "json_object"},
-                        temperature=AI_TEMPERATURE_STRATEGY
-                    )
-                    report_data = json.loads(resp.choices[0].message.content)
-                    
-                    valid, err = validate_json_output(report_data, ["wins_section", "in_progress_section"], "Report")
-                    if not valid: st.error(err); st.stop()
-                    
-                    st.session_state['report_data'] = report_data
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                result = call_ai(REPORT_GENERATION_PROMPT, report_input, require_json=True)
+                
+                if "error" in result:
+                    st.error(result["error"])
+                    st.stop()
+                
+                report_data = result
+                valid, err = validate_json_output(report_data, ["wins_section", "in_progress_section"], "Report")
+                if not valid: st.error(err); st.stop()
+                
+                st.session_state['report_data'] = report_data
+                st.rerun()
     
     if 'report_data' in st.session_state:
         report_data = st.session_state['report_data']
@@ -344,8 +306,7 @@ with tab_report:
         report_md = format_report_markdown(report_data)
         st.markdown(report_md)
         
-        # Gmail automation
-        subject = f"Weekly Project Update - {__import__('datetime').datetime.now().strftime('%B %d, %Y')}"
+        subject = f"Weekly Project Update - {datetime.now().strftime('%B %d, %Y')}"
         gmail_url = generate_gmail_url(subject=subject, body=report_md)
         
         c1, c2 = st.columns(2)
@@ -365,38 +326,27 @@ with tab_meeting:
                                  placeholder="e.g., Sprint planning meeting. Attendees: You, Sarah, Mike. Discussed blog launch, pricing page...")
     
     if st.button("🚀 Break Down Meeting", type="primary", use_container_width=True, key="meeting_btn"):
-        if not api_key:
-            st.error("⚠️ Please enter your OpenAI API Key in the sidebar.")
-        elif not meeting_input.strip():
+        if not meeting_input.strip():
             st.warning("⚠️ Please paste meeting notes first.")
         else:
             with st.spinner("🧠 AI extracting action items..."):
-                try:
-                    client = OpenAI(api_key=api_key)
-                    resp = client.chat.completions.create(
-                        model=AI_MODEL,
-                        messages=[
-                            {"role": "system", "content": MEETING_EXTRACTION_PROMPT},
-                            {"role": "user", "content": meeting_input}
-                        ],
-                        response_format={"type": "json_object"},
-                        temperature=AI_TEMPERATURE_EXTRACTION
-                    )
-                    meeting_data = json.loads(resp.choices[0].message.content)
-                    
-                    valid, err = validate_json_output(meeting_data, ["action_items", "key_decisions"], "Meeting")
-                    if not valid: st.error(err); st.stop()
-                    
-                    st.session_state['meeting_data'] = meeting_data
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                result = call_ai(MEETING_EXTRACTION_PROMPT, meeting_input, require_json=True)
+                
+                if "error" in result:
+                    st.error(result["error"])
+                    st.stop()
+                
+                meeting_data = result
+                valid, err = validate_json_output(meeting_data, ["action_items", "key_decisions"], "Meeting")
+                if not valid: st.error(err); st.stop()
+                
+                st.session_state['meeting_data'] = meeting_data
+                st.rerun()
     
     if 'meeting_data' in st.session_state:
         meeting_data = st.session_state['meeting_data']
         st.markdown("---")
         
-        # Today's Tasks - The Main Feature
         st.subheader("✅ Your Tasks & Reminders")
         action_items = meeting_data.get("action_items", [])
         
@@ -409,12 +359,10 @@ with tab_meeting:
         else:
             st.info("No action items extracted from this meeting.")
         
-        # Full breakdown
         with st.expander("📋 View Full Meeting Breakdown"):
             meeting_md = format_meeting_markdown(meeting_data)
             st.markdown(meeting_md)
         
-        # Actions
         st.markdown("### 🚀 Take Action")
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -425,7 +373,6 @@ with tab_meeting:
             meeting_md = format_meeting_markdown(meeting_data)
             st.download_button("📥 Download Full Notes", meeting_md, "Meeting_Notes.md", "text/markdown", use_container_width=True)
         with c3:
-            # Gmail reminder to self
             subject = f"📌 Reminder: Tasks from {meeting_data.get('meeting_title', 'Meeting')}"
             body = "Your action items from today's meeting:\n\n"
             for item in action_items:
