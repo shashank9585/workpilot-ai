@@ -94,7 +94,7 @@ tab_dash, tab_audit, tab_sow, tab_report, tab_meeting = st.tabs([
 with tab_dash:
     st.markdown("---")
     st.markdown("### 🎯 Choose a Workflow")
-    st.markdown("Each workflow is engineered to save you hours of admin work every week.")
+    st.markdown("Each workflow is engineered to save you hours of admin work every week. Click a tab above or use the quick actions below.")
     
     st.markdown("---")
     
@@ -107,9 +107,7 @@ with tab_dash:
         st.markdown("- Catch invoice mistakes")
         st.markdown("- Generate dispute emails")
         st.markdown("- Export CSV reports")
-        st.markdown("")
-        if st.button("Open Finance Workspace →", key="finance_ws", use_container_width=True):
-            st.switch_tab(tab_audit)
+        st.caption("👆 Click the **💰 Finance** tab above")
         
         st.markdown("")
         st.markdown("### 📅 Meeting Workspace")
@@ -117,9 +115,7 @@ with tab_dash:
         st.markdown("- Extract action items")
         st.markdown("- Set reminders")
         st.markdown("- Export task lists")
-        st.markdown("")
-        if st.button("Open Meeting Workspace →", key="meeting_ws", use_container_width=True):
-            st.switch_tab(tab_meeting)
+        st.caption("👆 Click the **📅 Meetings** tab above")
     
     with col2:
         st.markdown("### 📝 Projects Workspace")
@@ -127,9 +123,7 @@ with tab_dash:
         st.markdown("- SOW & Proposals")
         st.markdown("- Meeting summaries")
         st.markdown("- Project briefs")
-        st.markdown("")
-        if st.button("Open Projects Workspace →", key="projects_ws", use_container_width=True):
-            st.switch_tab(tab_sow)
+        st.caption("👆 Click the **📝 Projects** tab above")
         
         st.markdown("")
         st.markdown("### 📧 Communication Workspace")
@@ -137,9 +131,7 @@ with tab_dash:
         st.markdown("- Weekly reports")
         st.markdown("- Follow-ups")
         st.markdown("- Status updates")
-        st.markdown("")
-        if st.button("Open Communication Workspace →", key="comm_ws", use_container_width=True):
-            st.switch_tab(tab_report)
+        st.caption("👆 Click the **📧 Communication** tab above")
     
     st.markdown("---")
     
