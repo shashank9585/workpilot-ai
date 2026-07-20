@@ -1,29 +1,20 @@
-"""
-WorkPilot AI - API Client
-Configured for xAI Grok API (Fast, reliable, allows cloud hosting).
-"""
-
+import streamlit as st
 import requests
 import json
 import re
 
-# ⚠️ PASTE YOUR GROK API KEY INSIDE THE QUOTES BELOW
-   GROK_API_KEY = "YOUR_API_KEY_HERE"  
-
-# xAI Grok API Endpoint
-API_URL = "https://api.x.ai/v1/chat/completions"
+# Safely get the API key from Streamlit Secrets, or use a placeholder
+GROK_API_KEY = st.secrets.get("GROQ_API_KEY", "YOUR_GROQ_API_KEY_HERE")
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 def call_ai(system_prompt: str, user_prompt: str, require_json: bool = False) -> dict:
-    """
-    Calls the xAI Grok API.
-    """
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
     ]
     
     if require_json:
-        messages[0]["content"] += "\n\nCRITICAL: You MUST output STRICT, VALID JSON ONLY. Do not include markdown formatting (like ```json), conversational text, or explanations."
+        messages[0]["content"] += "\n\nCRITICAL: You MUST output STRICT, VALID JSON ONLY. No markdown, no explanations."
 
     headers = {
         "Content-Type": "application/json",
@@ -31,17 +22,17 @@ def call_ai(system_prompt: str, user_prompt: str, require_json: bool = False) ->
     }
     
     payload = {
-        "model": "grok-beta",  # You can also use "grok-2-latest"
+        "model": "llama-3.3-70b-versatile",
         "messages": messages,
         "temperature": 0.1,
         "max_tokens": 2000
     }
 
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=45)
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
         
         if response.status_code == 401:
-            return {"error": "🔑 Invalid Grok API key. Please check the key you pasted."}
+            return {"error": "🔑 Invalid Groq API key. Please add it to Streamlit Secrets."}
         elif response.status_code == 429:
             return {"error": "⏳ Rate limit reached. Please wait a moment and try again."}
         elif response.status_code != 200:
@@ -51,7 +42,6 @@ def call_ai(system_prompt: str, user_prompt: str, require_json: bool = False) ->
         response_text = data["choices"][0]["message"]["content"]
         
         if require_json:
-            # Clean up any markdown formatting the AI might accidentally add
             response_text = response_text.strip()
             response_text = re.sub(r'^```(?:json)?\s*', '', response_text, flags=re.MULTILINE)
             response_text = re.sub(r'\s*```$', '', response_text, flags=re.MULTILINE)
@@ -60,7 +50,7 @@ def call_ai(system_prompt: str, user_prompt: str, require_json: bool = False) ->
             try:
                 return json.loads(response_text)
             except json.JSONDecodeError:
-                return {"error": f"🧠 AI failed to output valid JSON. Raw output snippet: {response_text[:150]}..."}
+                return {"error": f"🧠 AI failed to output valid JSON. Snippet: {response_text[:150]}"}
         
         return {"response": response_text}
         
