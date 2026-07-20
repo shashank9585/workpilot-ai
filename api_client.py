@@ -1,21 +1,21 @@
 """
 WorkPilot AI - API Client
-Now using AINative Studio API (Free, allows cloud hosting, OpenAI-compatible)
-Get your free API key at: https://ainative.studio/free-llm-api
+Configured for xAI Grok API (Fast, reliable, allows cloud hosting).
 """
 
 import requests
 import json
 import re
 
-# ⚠️ CRITICAL: Replace with your AINative Studio API Key
-# Get it free at: https://ainative.studio/free-llm-api
-API_KEY = "e2137fe5-d9f1-4b76-955f-624eab799673" 
-API_URL = "https://api.ainative.studio/v1/chat/completions"
+# ⚠️ PASTE YOUR GROK API KEY INSIDE THE QUOTES BELOW
+   GROK_API_KEY = "YOUR_API_KEY_HERE"  
+
+# xAI Grok API Endpoint
+API_URL = "https://api.x.ai/v1/chat/completions"
 
 def call_ai(system_prompt: str, user_prompt: str, require_json: bool = False) -> dict:
     """
-    Calls the AINative Studio Chat Completion API.
+    Calls the xAI Grok API.
     """
     messages = [
         {"role": "system", "content": system_prompt},
@@ -23,25 +23,25 @@ def call_ai(system_prompt: str, user_prompt: str, require_json: bool = False) ->
     ]
     
     if require_json:
-        messages[0]["content"] += "\n\nCRITICAL: You MUST output STRICT, VALID JSON ONLY. No markdown, no explanations."
+        messages[0]["content"] += "\n\nCRITICAL: You MUST output STRICT, VALID JSON ONLY. Do not include markdown formatting (like ```json), conversational text, or explanations."
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
+        "Authorization": f"Bearer {GROK_API_KEY}"
     }
     
     payload = {
-        "model": "llama-3.3-70b",  # Free, fast, reliable model on AINative
+        "model": "grok-beta",  # You can also use "grok-2-latest"
         "messages": messages,
         "temperature": 0.1,
         "max_tokens": 2000
     }
 
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=45)
         
         if response.status_code == 401:
-            return {"error": "🔑 Invalid API key. Get a free key at https://ainative.studio/free-llm-api"}
+            return {"error": "🔑 Invalid Grok API key. Please check the key you pasted."}
         elif response.status_code == 429:
             return {"error": "⏳ Rate limit reached. Please wait a moment and try again."}
         elif response.status_code != 200:
@@ -51,7 +51,7 @@ def call_ai(system_prompt: str, user_prompt: str, require_json: bool = False) ->
         response_text = data["choices"][0]["message"]["content"]
         
         if require_json:
-            # Clean up any markdown formatting the AI might add
+            # Clean up any markdown formatting the AI might accidentally add
             response_text = response_text.strip()
             response_text = re.sub(r'^```(?:json)?\s*', '', response_text, flags=re.MULTILINE)
             response_text = re.sub(r'\s*```$', '', response_text, flags=re.MULTILINE)
@@ -60,7 +60,7 @@ def call_ai(system_prompt: str, user_prompt: str, require_json: bool = False) ->
             try:
                 return json.loads(response_text)
             except json.JSONDecodeError:
-                return {"error": "🧠 AI failed to output valid JSON. Please try again."}
+                return {"error": f"🧠 AI failed to output valid JSON. Raw output snippet: {response_text[:150]}..."}
         
         return {"response": response_text}
         
