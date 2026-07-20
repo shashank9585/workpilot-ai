@@ -1,0 +1,76 @@
+# ==========================================
+# Python & Virtual Environments
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments (NEVER push dependencies)
+venv/
+env/
+ENV/
+.venv/
+
+# ==========================================
+# Streamlit & Secrets (CRITICAL FOR SECURITY)
+# ==========================================
+# Never push your local API keys or secrets
+.streamlit/secrets.toml
+.env
+.env.local
+
+# ==========================================
+# IDEs & Editors
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ==========================================
+# OS Generated Files
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Logs & Testing
+# ==========================================
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ==========================================
+# Local Sample Downloads (Optional)
+# ==========================================
+# If users download sample files locally, ignore the folder
+/sample_files/downloads/
